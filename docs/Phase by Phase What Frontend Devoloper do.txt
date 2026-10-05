@@ -1,0 +1,148 @@
+Phase-by-Phase: What the Frontend Developer Needs to Build
+PHASE 1 — Project Setup
+
+No frontend work — this was backend scaffolding only (repo, database, environment config).
+
+PHASE 2 — Authentication (Mobile OTP)
+
+Backend gives you:
+
+Endpoint	Purpose
+POST /api/auth/register/	Create account
+POST /api/auth/verify-mobile/	Confirm 6-digit OTP
+POST /api/auth/resend-otp/	Resend OTP
+POST /api/auth/login/	Get JWT tokens
+POST /api/auth/refresh/	Refresh access token
+POST /api/auth/logout/	Blacklist refresh token
+POST /api/auth/forgot-password/	Email a reset link
+POST /api/auth/reset-password/	Set new password via link
+
+Frontend builds:
+
+Registration form (full name, email, mobile, password, confirm password).
+OTP verification screen — 6-digit input, shown immediately after registration (don't skip to login). Include a "Resend code" link.
+Login form (mobile number + password).
+Forgot/Reset password flow — email input → link sent → reset form (still email-based, separate from mobile OTP).
+Token storage — store access/refresh securely (e.g. httpOnly cookie or secure storage), attach Authorization: Bearer <access> to all authenticated requests, and call /refresh/ when the access token expires.
+COMMON UTILITIES (Infrastructure — no new endpoints)
+
+Backend gives you: Nothing directly visible, but every list endpoint from here on returns a consistent pagination object (count, total_pages, current_page, next, previous), and every error response follows the same {success, message, errors} shape — including framework-level errors like 404s you didn't hand-write.
+
+Frontend builds:
+
+A generic API error handler that reads {success, message, errors} uniformly across the entire app — you never need special-case parsing per endpoint.
+A generic pagination component (page numbers, next/prev) that reads the shared pagination object shape, reusable across every list screen (Events, Guests, Invitations, etc.).
+PHASE 3 — Membership + Payment (Razorpay)
+
+Backend gives you:
+
+Endpoint	Purpose
+GET /api/memberships/plans/	Public pricing list
+GET /api/memberships/plans/<slug>/	One plan's details
+POST /api/memberships/subscribe/	Subscribe to a FREE plan
+POST /api/memberships/change-plan/	Upgrade/downgrade (free plans only)
+GET /api/memberships/my-subscription/	Current plan
+GET /api/memberships/my-usage/	Plan limits (now includes template_names)
+GET /api/memberships/portal-access/	Gate check: {can_access_portal, next_step}
+POST /api/payments/create-order/	Start Razorpay checkout
+POST /api/payments/verify/	Confirm payment → activates subscription
+
+Frontend builds:
+
+Public pricing page — cards per plan showing price, guest/event limits, template_names (which invitation designs are included), and feature checkmarks.
+Post-login routing guard — call portal-access right after login; route based on next_step: "verify_mobile" → OTP screen, "select_plan" → pricing, null → dashboard.
+Checkout flow — free plan calls subscribe/ directly; paid plan calls create-order/, then opens Razorpay's Checkout.js widget using the returned razorpay_key_id + razorpay_order_id. On the widget's success callback, send razorpay_payment_id + razorpay_signature to verify/.
+Account settings — current plan widget using my-subscription/ and my-usage/.
+Upgrade/downgrade UI (reuse pricing page component) calling change-plan/.
+Error handling: 402 → route to pricing; 409 → show the specific conflict message returned.
+PHASE 5 — Event Management
+
+Backend gives you:
+
+Endpoint	Purpose
+GET /api/events/	List organizer's own events (paginated)
+POST /api/events/	Create event (enforces event_limit)
+GET /api/events/<id>/	Event details
+PATCH /api/events/<id>/	Update event
+DELETE /api/events/<id>/	Delete event
+
+Frontend builds:
+
+"My Events" dashboard — card grid using the lightweight list fields (name, event_type, event_date, cover_image, status).
+Create Event form — all fields (name, event_type dropdown, date, time, venue, address, Google Maps link, cover image). Show a free-text input for custom_event_type_label only when event_type === "CUSTOM".
+Event detail/edit page and a delete confirmation dialog.
+Error handling: 409 (event limit reached) → prompt to upgrade; 402 (no active plan) → route to pricing; 403 (not your event) → shouldn't normally be reachable from your own UI, but handle gracefully.
+PHASE 6 — Guest Management
+
+Backend gives you:
+
+Endpoint	Purpose
+GET /api/events/<event_pk>/guests/	List guests (paginated, filterable, searchable)
+POST /api/events/<event_pk>/guests/	Add one guest
+GET/PATCH/DELETE /api/events/<event_pk>/guests/<id>/	Single guest ops
+POST /api/events/<event_pk>/guests/import-csv/	Bulk import
+GET /api/events/<event_pk>/guests/export-csv/	Download CSV
+
+Frontend builds:
+
+Guest table per event — columns: name, mobile number, family member count, invitation status, response status. Include search box (?search=) and filter dropdowns (?response_status=, ?invitation_status=).
+Add Guest form (manual entry) and inline edit for family member count etc.
+CSV Import button — file picker → multipart upload to import-csv/ → show the returned summary (created_count, skipped_count, skipped_rows with reasons).
+CSV Export button — triggers a file download from export-csv/.
+Error handling: 409 (guest limit or duplicate) → show inline; 402 → route to pricing.
+PHASE 7 — Invitation Templates (Plan-Curated)
+
+Backend gives you:
+
+Endpoint	Purpose
+GET /api/invitation-templates/	Templates included in organizer's current plan (auto-filtered)
+GET /api/events/<event_pk>/invitations/	Invitation history for an event
+POST /api/events/<event_pk>/invitations/generate/	Generate personalized invitation
+
+Frontend builds:
+
+Template gallery — grid of preview_image thumbnails with name/description. Since the list is now pre-filtered by plan, no "locked" state UI is needed — everything shown is usable.
+Generate Invitation action — from a guest row (or bulk), open the gallery → on pick, call generate/ with {guest_id, template_id}.
+Invitation preview — show the returned image_file so the organizer can review before sending.
+Invitation history table per event — guest, template used, status (watch for FAILED renders).
+Error handling: 403 with template_not_in_plan → show "Upgrade to unlock this template"; 409 duplicate → "Already generated."
+PHASE 8 — WhatsApp Invitations (wa.me Links)
+
+Backend gives you:
+
+Endpoint	Purpose
+POST /api/invitations/<id>/send-whatsapp/	Build the wa.me link
+POST /api/whatsapp-logs/<id>/mark-sent/	Confirm sent
+POST /api/whatsapp-logs/<id>/retry/	Retry a send
+GET /api/events/<event_pk>/whatsapp-logs/	Send status per event
+
+Frontend builds:
+
+"Send via WhatsApp" button per guest row → call send-whatsapp/ → immediately open the returned wa_link in a new tab (window.open).
+Image download/attach helper right next to Send — since wa.me can't pre-attach media, show a clear "Download image to attach in WhatsApp" step.
+"Mark as Sent" confirmation button shown after the WhatsApp tab opens → calls mark-sent/.
+Retry button for guests still showing NOT_SENT.
+Status column in the guest table driven by invitation_status (Not Sent / Sent / Failed), which updates automatically once marked sent.
+Important UX note to design around: there's no real delivery confirmation (no WhatsApp Business API) — "Sent" means the organizer confirmed it, not that WhatsApp verified delivery. Consider a subtle label like "Marked as sent" rather than implying guaranteed delivery.
+
+PHASE 9 — GUEST RESPONSE SYSTEM
+
+This is a genuinely separate, public-facing page — not part of the authenticated organizer portal. It needs its own route in your frontend router that requires no login state at all.
+
+Public response page at a route like /respond/:token — on load, call GET /api/respond/<token>/.
+Render the invitation — show invitation_image prominently (this is the actual personalized invitation card), plus event_name, event_date, event_time, venue_name, address, and a Google Maps link if google_maps_link is present.
+Three buttons: Accept / Reject / Maybe — only show these if already_responded is false. On click, call POST /api/respond/<token>/ with { "response": "ACCEPTED" } (or REJECTED/MAYBE).
+Post-response state — if already_responded is true (either on initial load, or right after submitting), replace the buttons with a simple confirmation: "You responded: [Accepted/Rejected/Maybe]. Thank you!"
+Error states:
+404 (invalid token) → show a friendly "This invitation link isn't valid" page, not a raw error.
+409 (already responded) → shouldn't normally be hit if you check already_responded first, but handle gracefully as a fallback (just show the confirmation state).
+No navbar/login UI needed on this page — it's meant to be opened by anyone with the link, including people who've never registered on the platform.
+
+
+PHASE 10 — DASHBOARD & ANALYTICS
+
+Organizer landing/home page — call GET /api/dashboard/overview/ on load, show total events, total guests, total accepted, total expected attendance as summary cards.
+Per-event Dashboard tab — call GET /api/dashboard/events/<id>/dashboard/ → render stat cards: Total Guests, Accepted, Rejected, Maybe, Pending, Invitations Sent/Not Sent/Failed, Expected Attendance.
+Charts section — call GET /api/dashboard/events/<id>/dashboard/charts/ → feed response_breakdown directly into a Recharts <PieChart> (guest response split) and invitation_breakdown into a <BarChart> (send status). The data is already shaped as [{name, value}], so minimal transformation needed on the frontend.
+Auto-refresh consideration — since this data changes whenever a guest responds or an invitation is sent, consider refetching the dashboard when the organizer returns to this tab, or after actions like "Mark as Sent" on the guest table, so numbers stay current without a full page reload.
+Empty state design — for brand-new events with zero guests, show a friendly "No guests yet" state rather than a chart with all zeros looking broken.

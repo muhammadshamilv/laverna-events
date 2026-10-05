@@ -1,0 +1,74 @@
+from django.urls import path
+
+from .preview_views import ActiveFilledTemplatePreviewView
+from .views import (
+    ActiveFilledTemplateView,
+    EventInvitationListView,
+    EventStandardFieldDefaultsView,
+    InvitationPreviewView,
+    InvitationReportPdfView,
+    InvitationReportView,
+    InvitationTemplateListView,
+    PendingWhatsAppReminderListView,
+    ReminderScheduleDetailView,
+    ReminderScheduleListCreateView,
+)
+
+
+urlpatterns = [
+    path(
+        "invitation-templates/",
+        InvitationTemplateListView.as_view(),
+        name="invitation-template-list",
+    ),
+    path(
+        "invitation-templates/active/",
+        ActiveFilledTemplateView.as_view(),
+        name="active-filled-template",
+    ),
+    path(
+        "invitation-templates/active/preview/",
+        ActiveFilledTemplatePreviewView.as_view(),
+        name="active-filled-template-preview",
+    ),
+    path(
+        "events/<int:event_pk>/invitations/preview/",
+        InvitationPreviewView.as_view(),
+        name="invitation-preview",
+    ),
+    path(
+        "events/<int:event_pk>/invitations/standard-defaults/",
+        EventStandardFieldDefaultsView.as_view(),
+        name="event-standard-defaults",
+    ),
+    path(
+        "events/<int:event_pk>/invitations/",
+        EventInvitationListView.as_view(),
+        name="event-invitation-list",
+    ),
+    path(
+        "events/<int:event_pk>/reminder-schedules/",
+        ReminderScheduleListCreateView.as_view(),
+        name="reminder-schedule-list-create",
+    ),
+    path(
+        "events/<int:event_pk>/reminder-schedules/<int:schedule_pk>/",
+        ReminderScheduleDetailView.as_view(),
+        name="reminder-schedule-detail",
+    ),
+    path(
+        "pending-whatsapp-reminders/",
+        PendingWhatsAppReminderListView.as_view(),
+        name="pending-whatsapp-reminders",
+    ),
+    path(
+        "events/<int:event_id>/invitations/report/",
+        InvitationReportView.as_view(),
+        name="invitation-report",
+    ),
+    path(
+        "events/<int:event_id>/invitations/report/pdf/",
+        InvitationReportPdfView.as_view(),
+        name="invitation-report-pdf",
+    ),
+]
